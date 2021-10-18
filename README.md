@@ -1,6 +1,6 @@
 # Projects
 
-- **risk-factors-cervical-cancer-prediction** (Using Python, data cleaning, feature engineering, visualization, PCA, RFE, Random Forest, Gradient Boosting, Naive Bayes, SVM, GridSearchCV, ROC)
+- **Establishment of machine learning models for cervical cancer prediction** (Using Python, data cleaning, feature engineering, visualization, PCA, RFE, Random Forest, Gradient Boosting, Naive Bayes, SVM, GridSearchCV, ROC)
 
 - **GSE19383** (Workflow for differential gene expression using Affymetrix microarrays, Using R Mardown, conducted Gene ontology (GO) based enrichment analysis and A pathway enrichment analysis using Reactome) 
 
