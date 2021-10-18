@@ -1,0 +1,381 @@
+---
+title: "GSE50567 Tumor Sample"
+author: "Xinru Qiu"
+date: "September 5th, 2017"
+output: 
+  pdf_document:
+    toc: true
+    number_sections: true
+geometry: margin = 1in 
+csl: biometrics.csl
+vignette: >
+    %\VignetteIndexEntry{An end to tend workflow for differential gene expression using Affymetrix microarrays}
+    %\VignetteEngine{knitr::rmarkdown}
+    %\VignetteEncoding{UTF-8} 
+---
+# Background of `GSE50567`
+__Organism__:	Homo sapiens
+
+__Summary__:  We analyzed 35 breast cancer specimens. Surgical samples obtained during mastectomy were flash-frozen in liquid nitrogen and stored at -80°C. Only samples from patients without neoadjuvant chemotherapy were used in this study as chemotherapy may seriously affect gene expression profile. All tissue samples were collected at the Pomeranian Medical University in Szczecin. Seventeen tumor samples were collected from patients with hereditary breast cancer: 12 were derived from tumors affecting women with hereditary BRCA1 mutation, the only one from a woman with BRCA2 mutation, while another eight cases had familial history of breast/ovarian cancer, but were negative for the BRCA1/2 mutations (so called BRCAx cases). Proportion of BRCA1 and BRCA2 mutated tumors was typical for the Polish population. Ten samples were derived from patients with apparently sporadic disease (no familial history of cancer) while 4 patients had a history of familial cancer aggregation (FCA) but without prevalence of breast/ovarian cancers. Thus, these samples were merged with sporadic samples in most of the analyses. All BRCA1 mutation-linked tumors in our study were negative for estrogen receptor (by immunohistochemistry, standard procedures for ER, PGR and HER2 staining were applied), while the only BRCA2-mutated tumor was ER-positive. There were 26 ductal and 5 medullary carcinomas within the study group, which is consistent with the distribution of histopathological types in BRCA1 mutation carriers. Patients were diagnosed at stage T1-2, N0-1 and M0. Caution: this submission contains the data from 6 microarrays done on the normal/pathologically unchanged breast tissue from breast cancer patiets. The data from normal tissues was not analyzed in the paper BRCA1-related gene signature in breast cancer is strongly influenced by ER status and molecular type by Lisowska et al., 2011, Front Biosci (Elite Ed). 2011 Jan 1;3:125-36
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+## ---- message=FALSE, warning=FALSE, include=FALSE------------------------
+library(Biobase)
+library(oligoClasses)
+library(knitr)
+library(BiocStyle)
+library(oligo)
+library(geneplotter)
+library(ggplot2)
+library(LSD)
+library(gplots)
+library(RColorBrewer)
+library(ArrayExpress)
+library(arrayQualityMetrics)
+library(stringr)
+library(matrixStats)
+library(topGO)
+library(genefilter)
+library(pd.hg.u133.plus.2)
+library(hgu133plus2.db)
+library(pheatmap)
+library(mvtnorm)
+library(DAAG)
+library(multcomp)
+library(limma)
+library(ReactomePA)
+library(clusterProfiler)
+library(devtools)
+library(biomaRt)
+library(reshape2)
+library(EnrichmentBrowser)
+library(tidyr)
+library(dplyr)
+list.files("GSE50567/CEL")
+celfiles <- list.files("GSE50567/CEL", full = TRUE)
+
+
+SDRF <- read.delim(
+  url("https://www.ebi.ac.uk/arrayexpress/files/E-GEOD-50567/E-GEOD-50567.sdrf.txt"))
+rownames(SDRF) <- SDRF$Array.Data.File
+SDRF <- AnnotatedDataFrame(SDRF)
+
+raw_data <- read.celfiles(celfiles, verbose = FALSE, phenoData = SDRF)
+pData(raw_data) <- pData(raw_data)[, c("Source.Name",
+                                       "Characteristics..brca1.2.mutation.",
+"Characteristics..clinical.sample.",                                       "FactorValue..ESTROGEN.RECEPTOR.STATUS.BY.IMMUNOHISTOCHEMISTRY.",
+                                       "FactorValue..MOLECULAR.SUBTYPE.ACCORDING.TO.SORLIE.ET.AL...PNAS.100..8418.23.2003.")]
+```
+## Quality control of the raw data
+Here we check for outliers and try to see whether the data clusters as expected, by whether the sample came from a tumor sample. We use the identifiers of the individuals as plotting symbols.
+
+```{r, fig.height=10, fig.width=8, message=FALSE, warning=FALSE}
+exp_raw <- log2(exprs(raw_data))
+PCA_raw <- prcomp(t(exp_raw), scale = FALSE)
+
+dataGG <- data.frame(PC1 = PCA_raw$x[,1], PC2 = PCA_raw$x[,2],
+                     Mutation = pData(raw_data)$Characteristics..brca1.2.mutation.,
+                     Sample = pData(raw_data)$Characteristics..clinical.sample.,
+                     Individual = pData(raw_data)$Source.Name)
+
+p <- (qplot(PC1, PC2, data = dataGG, color =  Sample,
+       main = "PCA plot of the raw data (log-transformed)", size = I(2), 
+       asp = 1.0, geom = "text",
+       label = Mutation)
+  + scale_colour_brewer(palette = "Set2"))  
+
+p + theme(legend.position = c(0.95, 0.08), legend.title = element_text(colour="blue", size=8, 
+                                      face="bold"))
+
+boxplot(raw_data, target = "core", 
+        main = "Boxplots of log2-intensities for the raw data")
+
+```
+The PCA (performed on the log-intensity scale) plot of the raw data shows that the first principal component does not differentiates between the tissues nor wether it is a BRCA mutated sample. And the intensity boxplots show that the intensity distributions of the individual arrays are quite different, indicating the need of an appropriate normalization.
+
+## Normalization and Quality assessment of the calibrated data
+```{r, fig.height=10, fig.width=8, message=FALSE, warning=FALSE}
+
+BRCA_eset <- oligo::rma(raw_data)
+exp_BRCA <- exprs(BRCA_eset)
+PCA <- prcomp(t(exp_BRCA), scale = FALSE)
+
+dataGG <- data.frame(PC1 = PCA$x[,1], PC2 = PCA$x[,2],
+                     Sample = pData(BRCA_eset)$Characteristics..clinical.sample.,
+                     Mutation = pData(BRCA_eset)$Characteristics..brca1.2.mutation.)
+
+p <- (qplot(PC1, PC2, data = dataGG, color =  Sample, shape =  Mutation,
+       main = "PCA plot of the normalized data", size = I(2), asp = 1.0)
+  + scale_colour_brewer(palette = "Set2"))
+
+p + theme(legend.position = c(0.95, 0.08), legend.title = element_text(colour="blue", size=8, 
+                                      face="bold"))
+
+
+```
+
+```{r, fig.height=8, fig.width=8, message=FALSE, warning=FALSE}
+dists <- as.matrix(dist(t(exp_BRCA), method = "manhattan"))
+colnames(dists) <- NULL
+diag(dists) <- NA
+rownames(dists) <-  pData(BRCA_eset)$Characteristics..brca1.2.mutation.
+hmcol <- colorRampPalette(rev(brewer.pal(9, "PuOr")))(255)
+
+pheatmap(dists, col = rev(hmcol), clustering_distance_rows = "manhattan",
+         clustering_distance_cols = "manhattan")
+```
+
+The normalized data's PCA plot shows that after normalization, we have separated tumor tissue from non-tumor tissue. However, the heatmap of the sample-to-sample distances roughly separates BRCA mutation and non-mutation samples and we can also see that the samples do not cluster strongly by whether the sample is a BRCA mutation, confirming the impression from the PCA plot that the separation between the mutation and non-mutations samples is not perfect. 
+
+
+## Subset for only BRCA1 mutation vs No mutation in Tumor Samples
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+
+raw_data <- raw_data[, raw_data$Characteristics..clinical.sample. == "surgical tumor sample"]
+raw_data <- raw_data[, !grepl("BRCA2", raw_data$Characteristics..brca1.2.mutation.)]
+BRCA_eset <- oligo::rma(raw_data)
+exp_BRCA <- exprs(BRCA_eset)
+```
+## Filtering based on intensity
+We now filter out lowly expressed genes. In the following histogram of the gene-wise medians, we can clearly see an enrichment of low medians on the left hand side. These represent the genes we want to filter.
+We will use the 5% quantile of this distribution as a threshold, then keep only those genes that show an expression higher than the threshold in at least as many arrays as in the smallest experimental group.
+First we check how many samples in each experimental group.
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+Mutation <- str_replace_all(pData(BRCA_eset)$Characteristics..brca1.2.mutation., " ", "_")
+Mutation <- ifelse(Mutation == "No_mutation", "No_mutation", "Mutation")
+
+no_of_samples <- table(paste0(
+  pData(BRCA_eset)$FactorValue..ESTROGEN.RECEPTOR.STATUS.BY.IMMUNOHISTOCHEMISTRY., "_", 
+  Mutation))
+no_of_samples 
+
+
+## ---- message=FALSE, warning=FALSE---------------------------------------
+BRCA_medians <- rowMedians(exprs(BRCA_eset))
+hist_res <- hist(BRCA_medians, 100, col="#e7efd8", freq = FALSE, 
+                 main = "Histogram of the median intensities", 
+                 xlab = "Median intensities")
+emp_mu <- hist_res$breaks[which.max(hist_res$density)]
+emp_sd <- mad(BRCA_medians)/2
+prop_cental <- 0.50
+lines(sort(BRCA_medians), prop_cental*dnorm(sort(BRCA_medians),
+                                            mean = emp_mu , sd = emp_sd),
+      col = "grey10", lwd = 4)
+cut_val <- 0.05 / prop_cental
+thresh_median <- qnorm(0.05 / prop_cental, emp_mu, emp_sd)
+samples_cutoff <- min(no_of_samples)
+idx_thresh_median <- apply(exprs(BRCA_eset), 1, function(x){
+  sum(x > thresh_median) >= samples_cutoff})
+table(idx_thresh_median)
+BRCA_filtered <- subset(BRCA_eset, idx_thresh_median)
+
+## ---- message=FALSE, warning=FALSE---------------------------------------
+anno_BRCA  <- AnnotationDbi::select(hgu133plus2.db,
+                                    keys=(featureNames(BRCA_filtered)),
+                                    columns = c("SYMBOL", "GENENAME"),
+                                    keytype="PROBEID")
+#Removing multiple mapping
+probe_stats <- anno_BRCA   %>%
+  group_by(PROBEID) %>%
+  summarize(no_of_matches = n_distinct(SYMBOL)) %>%
+  filter(no_of_matches > 1)
+#probe_stats
+#dim(probe_stats)
+ids_to_exlude <- ((featureNames(BRCA_filtered) %in% probe_stats$PROBEID) |
+                    featureNames(BRCA_filtered)  %in% subset(anno_BRCA ,is.na(SYMBOL))$PROBEID)
+#table(ids_to_exlude)
+BRCA_final <- subset(BRCA_filtered, !ids_to_exlude)
+#validObject(BRCA_final)
+fData(BRCA_final)$PROBEID <- rownames(fData(BRCA_final))
+fData(BRCA_final) <- left_join(fData(BRCA_final), anno_BRCA)
+fData(BRCA_final) <- fData(BRCA_final) %>% distinct(fData(BRCA_final)$PROBEID, .keep_all = T)
+rownames(fData(BRCA_final)) <-fData(BRCA_final)$PROBEID 
+#validObject(BRCA_final)
+
+## ----Using Limma to find DE genes---------------------------------------
+Individual <- as.character(pData(BRCA_final)$Source.Name)
+Individual <- gsub(" 1$", "", Individual)
+Individual[]
+
+Mutation <- str_replace_all(pData(BRCA_final)$Characteristics..brca1.2.mutation., " ", "_")
+Mutation <- ifelse(Mutation == "No_mutation", "No_mutation", "Mutation")
+Mutation <- as.factor(Mutation)
+
+
+ER <- str_replace_all(pData(BRCA_final)$FactorValue..ESTROGEN.RECEPTOR.STATUS.BY.IMMUNOHISTOCHEMISTRY., " ", "_")
+
+
+design_BRCA_tumor <- model.matrix(~0 + Mutation)
+colnames(design_BRCA_tumor) <- c("Mutation", "No_mutation")
+fit_BRCA_tumor <- lmFit(BRCA_final, design_BRCA_tumor)
+contrast.matrix_tumor <- makeContrasts(Mutation_NoMutation = Mutation - No_mutation, levels=design_BRCA_tumor)
+contrast.matrix_tumor
+Mutation_NoMutation_fits_tumor <- contrasts.fit(fit_BRCA_tumor, contrast.matrix_tumor)
+Mutation_NoMutation_ebFit_tumor <- eBayes(Mutation_NoMutation_fits_tumor)
+options(digits=2)
+topTable(Mutation_NoMutation_ebFit_tumor, coef=1,  n=20, adjust="BH")
+table_tumor <-  topTable(Mutation_NoMutation_ebFit_tumor, number = Inf)
+head(table_tumor)
+table(table_tumor$adj.P.Val < 0.1)
+table(table_tumor$P.Value < 0.001)
+hist(table_tumor$P.Value, col = brewer.pal(3, name = "Set2")[1],
+     main = "mutation vs non-mutation - Tumor Environment", xlab = "p-values")
+
+```
+
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+## ----Gene ontology (GO) based enrichment analysis--------------------------------------------------
+DE_genes_tumor <- subset(table_tumor, adj.P.Val < 0.1)$PROBEID
+back_genes_idx <- genefinder(BRCA_final, as.character(DE_genes_tumor), 
+                             method="manhattan", scale="none")
+back_genes_idx <- sapply(back_genes_idx, function(x)x$indices)
+back_genes <-featureNames(BRCA_final)[back_genes_idx]
+back_genes <- setdiff(back_genes, DE_genes_tumor)
+intersect(back_genes, DE_genes_tumor)
+length(back_genes)
+#multidensity(list(
+#  tumor=  table_tumor[,"AveExpr"] ,
+#  fore= table_tumor[DE_genes_tumor , "AveExpr"],
+#  back= table_tumor[rownames(table_tumor) %in% back_genes, "AveExpr"]),
+#  col = c("#e46981", "#ae7ee2", "#a7ad4a"),
+#  xlab="mean expression",
+#  main = "DE genes for tumor - background - matching")
+
+gene_IDs <- rownames(table_tumor)
+in_universe <- gene_IDs %in% c(DE_genes_tumor,  back_genes)
+inSelection <-  gene_IDs %in% DE_genes_tumor
+tumor_genes <- factor(as.integer(inSelection[in_universe]))
+names(tumor_genes) <- gene_IDs[in_universe]
+
+top_GO_data <- new("topGOdata", ontology = "BP", allGenes = tumor_genes,
+                   nodeSize = 10, annot=annFUN.db, affyLib = "hgu133plus2.db")
+
+result_top_GO_elim <- runTest(top_GO_data, algorithm = "elim", statistic = "Fisher")
+result_top_GO_classic <- runTest(top_GO_data, algorithm = "classic", statistic = "Fisher")
+
+
+res_top_GO <- GenTable(top_GO_data, Fisher.elim = result_top_GO_elim,
+                       Fisher.classic = result_top_GO_classic,
+                       orderBy = "Fisher.elim" , topNodes = 100)
+genes_top_GO <- printGenes(top_GO_data, whichTerms = res_top_GO$GO.ID,
+                           chip = "hgu133plus2.db", geneCutOff = 1000)
+res_top_GO$sig_genes <- sapply(genes_top_GO, function(x){
+  str_c(paste0(x[x$'raw p-value' == 2, "Symbol.id"],";"), collapse = "")
+})
+
+```
+# Gene ontology (GO) based enrichment analysis
+**Using FDR under 10% for function analysis**  
+
+Top 20 GO enrichment terms
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+head(res_top_GO[,1:8], 20)
+
+```
+A graphical representation of the topGO results.
+
+```{r, echo=TRUE, fig.align="center", fig.height=8, fig.width=10, message=FALSE, warning=FALSE}
+showSigOfNodes(top_GO_data, score(result_top_GO_elim), firstSigNodes = 5,
+               useInfo = 'def')
+
+```
+
+
+# A pathway enrichment analysis using Reactome
+**Using FDR under 10% for pathway enrichment analysis**  
+
+Enriched Reactome pathways and their p-values as a bar chart.
+- The top pathways can be displayed as a bar char that displays all categories with a p-value below the specified cutoff.
+```{r, echo=TRUE, fig.align="center", message=FALSE, warning=FALSE}
+entrez_ids <- mapIds(hgu133plus2.db, 
+                     keys = rownames(table_tumor), 
+                     keytype="PROBEID",
+                     column = "ENTREZID")
+
+genelist = entrez_ids[DE_genes_tumor]
+names(genelist) <- NULL
+reactome_enrich <- enrichPathway(gene = genelist, organism = "human",
+                                 pvalueCutoff = 0.2,
+                                 readable = TRUE)
+
+head(summary(reactome_enrich))[1:6]
+barplot(reactome_enrich)
+
+```
+
+Enriched Reactome pathways enrichment results as a graph.
+- The "enrichment map" displays the results of the enrichment analysis as a graph, where the color represents the p-value of the pathway and the edge-thickness is proportional to the number of overlapping genes between two pathways.
+```{r, echo=TRUE, fig.align="center", fig.height=6, fig.width=8, message=FALSE, warning=FALSE}
+enrichMap(reactome_enrich, n = 10, vertex.label.font = 2)
+```
+
+
+# A pathway enrichment analysis using GSEA
+Enriched GSEA pathways enrichment results as a graph.
+```{r, echo=TRUE, fig.align="center", fig.height=6, fig.width=8, message=FALSE, warning=FALSE}
+entrez_ids <- mapIds(hgu133plus2.db, 
+                     keys = rownames(table_tumor), 
+                     keytype="PROBEID",
+                     column = "ENTREZID")
+entrez_ids <- as.data.frame(entrez_ids)
+de_tumor <- merge(entrez_ids, table_tumor, by=0)
+de_tumor <- as.data.frame(de_tumor)
+gene_avg_exp <- de_tumor %>% 
+  filter(adj.P.Val < 0.2) %>% 
+  group_by(entrez_ids) %>% 
+  summarise_all(funs(mean))%>%
+  dplyr::select(entrez_ids,AveExpr) %>% 
+  arrange(desc(AveExpr)) 
+
+gene_avg_exp$entrez_ids <- as.character(gene_avg_exp$entrez_ids)
+gene_avg_exp2 <- structure(gene_avg_exp$AveExpr, names= gene_avg_exp$entrez_ids)
+
+y <- gsePathway(gene_avg_exp2, nPerm=1000,
+                minGSSize=120, pvalueCutoff=0.2,
+                pAdjustMethod="BH", verbose=FALSE)
+res <- as.data.frame(y)
+res
+enrichMap(y)
+
+```
+
+# Conclusion:
+## Function Analysis
+Top GO terms are:  
+1. negative regulation of cell proliferation  
+2. G-protein coupled receptor signaling pathway  
+3. lipid digestion  
+4. penile erection  
+5. progesterone metabolic process  
+6. low-density lipoprotein particle clearance  
+7. positive regulation of fatty acid metabolic process  
+8. regulation of cell shape  
+9. positive regulation of execution phase of apoptosis  
+10. protein kinase A signaling
+
+## Pathway enrichment analysis using Reactome  
+Top Affected Pathways:  
+1. Laminin interactions  
+2. MET activates PTK2 signaling  
+3. Non-integrin membrane-ECM interactions  
+4. Diseases of glycosylation  
+5. Other semaphorin interactions  
+6. Extracellular matrix organization
+
+## Pathway enrichment analysis using GSEA  
+Top Affected Pathways:  
+1.	Metabolism of proteins  
+2.	Metabolism  
+3.	Gene Expression  
+4.	Post-translational protein modification  
+5.	Innate Immune System  
+6.	Signal Transduction  
+7.	Immune System  
+8.	Developmental Biology  
+9.	Cytokine Signaling in Immune system  
+10.	Disease
+
+

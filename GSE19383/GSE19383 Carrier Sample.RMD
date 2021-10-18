@@ -1,0 +1,349 @@
+---
+title: "GSE19383 Carrier Sample"
+author: "Xinru Qiu"
+date: "October 31, 2017"
+output: 
+  pdf_document:
+    toc: true
+    number_sections: true
+geometry: margin = 1in 
+csl: biometrics.csl
+vignette: >
+    %\VignetteIndexEntry{An end to tend workflow for differential gene expression using Affymetrix microarrays}
+    %\VignetteEngine{knitr::rmarkdown}
+    %\VignetteEncoding{UTF-8} 
+---
+
+# Background of `GSE19383`
+__Organism__:	Homo sapiens
+
+__Summary__:  36 BRCA1 and BRCA2 carrier samples, 6 were derived from RNA from Breast BRCA1 mutant,  6 were derived from RNA from Breast BRCA2 mutant, 6 were derived from RNA from Breast WT, 6 were derived from RNA from Ovary WT.
+
+# BRCA1 versus WT
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+library(GEOquery)
+library(oligo)
+library(limma)
+library(stringr)
+library(tidyr)
+library(dplyr)
+library(pd.hg.u133.plus.2)
+library(hgu133plus2.db)
+library(affy)
+library(affydata)
+library(AnnotationDbi)
+library(stats4)
+library(GenomeInfoDb)
+library(S4Vectors)
+library(IRanges)
+library(Biobase)
+library(oligoClasses)
+library(knitr)
+library(BiocStyle)
+library(geneplotter)
+library(ggplot2)
+library(LSD)
+library(gplots)
+library(RColorBrewer)
+library(ArrayExpress)
+library(arrayQualityMetrics)
+library(matrixStats)
+library(topGO)
+library(genefilter)
+library(pheatmap)
+library(mvtnorm)
+library(DAAG)
+library(multcomp)
+library(ReactomePA)
+library(clusterProfiler)
+library(devtools)
+library(biomaRt)
+library(reshape2)
+library(EnrichmentBrowser)
+celfiles <- list.files("GSE19383/CEL", full = TRUE)
+#-------- Get phenodata --------------------------------------------------------------
+SDRF <- read.delim(
+  url("https://www.ebi.ac.uk/arrayexpress/files/E-GEOD-19383/E-GEOD-19383.sdrf.txt"))
+rownames(SDRF) <- SDRF$Array.Data.File
+SDRF <- AnnotatedDataFrame(SDRF)
+rawData <- read.celfiles(celfiles, phenoData = SDRF)
+#--------- Select needed variables from phenodata --------------------
+pData(rawData) <- pData(rawData)[, c("Source.Name","Comment..Sample_description.")]
+
+#--------- Check whether data needs normalization and normalization result ------------
+boxplot(exprs(rawData), range=0)
+e <- oligo::rma(rawData)
+boxplot(exprs(e), range=0)
+#--------------- Filter out the ones have low intensity ----------------------------
+no_of_samples <- table(pData(rawData)$Comment..Sample_description.)
+no_of_samples 
+BRCA_medians <- rowMedians(exprs(e))
+hist_res <- hist(BRCA_medians, 100, col="#e7efd8", freq = FALSE, 
+                 main = "Histogram of the median intensities", 
+                 xlab = "Median intensities")
+emp_mu <- hist_res$breaks[which.max(hist_res$density)]
+emp_sd <- mad(BRCA_medians)/2
+prop_cental <- 0.50
+lines(sort(BRCA_medians), prop_cental*dnorm(sort(BRCA_medians),
+                                            mean = emp_mu , sd = emp_sd),
+      col = "grey10", lwd = 4)
+cut_val <- 0.05 / prop_cental
+thresh_median <- qnorm(0.05 / prop_cental, emp_mu, emp_sd)
+samples_cutoff <- min(no_of_samples)
+idx_thresh_median <- apply(exprs(e), 1, function(x){
+  sum(x > thresh_median) >= samples_cutoff})
+table(idx_thresh_median)
+e <- subset(e, idx_thresh_median)
+#--------------- Annotation -----------------------------------------------------
+anno_BRCA  <- AnnotationDbi::select(hgu133plus2.db,
+                                    keys=(featureNames(e)),
+                                    columns = c("SYMBOL", "GENENAME"),
+                                    keytype="PROBEID")
+probe_stats <- anno_BRCA %>%
+  group_by(PROBEID) %>%
+  summarize(no_of_matches = n_distinct(SYMBOL)) %>%
+  filter(no_of_matches > 1)
+ids_to_exlude <- ((featureNames(e) %in% probe_stats$PROBEID) |
+                    featureNames(e)  %in% subset(anno_BRCA ,is.na(SYMBOL))$PROBEID)
+
+e2 <- subset(e, !ids_to_exlude)
+fData(e2)$PROBEID <- rownames(fData(e2))
+fData(e2) <- left_join(fData(e2), anno_BRCA)
+fData(e2) <- fData(e2) %>% distinct(fData(e2)$PROBEID, .keep_all = T)
+rownames(fData(e2)) <-fData(e2)$PROBEID 
+
+#-------------- Use limma to find DE ------------------------------------------------
+
+pData(e2)$group <- str_replace_all(pData(rawData)$Comment..Sample_description., " ", "_")
+pData(e2)$group <- ifelse(grepl("BRCA1_mutant", pData(e2)$group), "BRCA1_mutant", 
+                      ifelse(grepl("BRCA2_mutant", pData(e2)$group), "BRCA2_mutant","WT"))
+pData(e2)$organ <- ifelse(grepl("Ovary", pData(e2)$Comment..Sample_description.), "Ovary", "Breast")
+
+levels(pData(e2)$group) <- c("BRCA1_mutant","BRCA2_mutant","WT")
+table(pData(e2)$group)
+
+#following two method has the same result
+lvls1 <- c("BRCA1_mutant", "WT")
+ebrca1 <- e2[,e2$group %in% lvls1]
+ebrca1$group <- factor(ebrca1$group, levels=lvls1)
+design_brca1 <- model.matrix(~ ebrca1$group)
+fit_brca1 <- lmFit(ebrca1, design=design_brca1)
+fit_brca1 <- eBayes(fit_brca1)
+ttbrca1 <- topTable(fit_brca1, coef=2, adjust="BH")
+ttbrca1 <-  topTable(fit_brca1, number = Inf)
+
+lvls2 <- c("BRCA2_mutant", "WT")
+ebrca2 <- e2[,e2$group %in% lvls2]
+brca2 <- as.factor(ebrca2$group)
+design_brca2 <- model.matrix(~0 + brca2)
+colnames(design_brca2) <- c("BRCA2_mutant", "WT")
+fit_brca2 <- lmFit(ebrca2, design=design_brca2)
+contrast.matrix_brca2 <- makeContrasts(BRCA2_mutant_WT = BRCA2_mutant - WT, 
+                                       levels=design_brca2)
+contrast.matrix_brca2
+BRCA2_mutant_WT_fits <- contrasts.fit(fit_brca2, contrast.matrix_brca2)
+BRCA2_mutant_WT_fits <- eBayes(BRCA2_mutant_WT_fits)
+ttbrca2 <- topTable(BRCA2_mutant_WT_fits, adjust="BH")
+ttbrca2 <-  topTable(BRCA2_mutant_WT_fits, number = Inf)
+
+#brcamut vs wt
+Mutation <- ifelse(grepl("mutant", pData(e2)$group),"BRCA_mutant","WT")
+Mutation <- as.factor(Mutation)
+design_BRCA_carrier <- model.matrix(~0 + Mutation)
+colnames(design_BRCA_carrier) <- c("BRCA_mutant", "WT")
+fit_BRCA_carrier <- lmFit(e2, design_BRCA_carrier)
+contrast.matrix_carrier <- makeContrasts(BRCA_mutant_WT = BRCA_mutant- WT, 
+                                         levels=design_BRCA_carrier)
+contrast.matrix_carrier
+Mutation_NoMutation_fits_carrier <- contrasts.fit(fit_BRCA_carrier, contrast.matrix_carrier)
+Mutation_NoMutation_ebFit_carrier <- eBayes(Mutation_NoMutation_fits_carrier)
+options(digits=2)
+ttbrca <- topTable(Mutation_NoMutation_ebFit_carrier, coef=1, n= 20,adjust="BH")
+table_carrier <-  topTable(Mutation_NoMutation_ebFit_carrier, number = Inf)
+
+#--------------GO enrichment-----------------------------------------------
+ttbrca1gene <- subset(ttbrca1, P.Value < 0.005)$PROBEID
+back_genes_idx <- genefinder(ebrca1, as.character(ttbrca1gene), 
+                             method="manhattan", scale="none")
+back_genes_idx <- sapply(back_genes_idx, function(x)x$indices)
+back_genes <-featureNames(ebrca1)[back_genes_idx]
+back_genes <- setdiff(back_genes, ttbrca1gene)
+intersect(back_genes, ttbrca1gene)
+length(back_genes)
+gene_IDs <- rownames(ttbrca1)
+in_universe <- gene_IDs %in% c(ttbrca1gene,  back_genes)
+inSelection <-  gene_IDs %in% ttbrca1gene
+all_genes <- factor(as.integer(inSelection[in_universe]))
+names(all_genes) <- gene_IDs[in_universe]
+
+top_GO_data <- new("topGOdata", ontology = "BP", allGenes = all_genes,
+                   nodeSize = 10, annot=annFUN.db, affyLib = "hgu133plus2.db")
+
+result_top_GO_elim <- runTest(top_GO_data, algorithm = "elim", statistic = "Fisher")
+result_top_GO_classic <- runTest(top_GO_data, algorithm = "classic", statistic = "Fisher")
+
+
+res_top_GO <- GenTable(top_GO_data, Fisher.elim = result_top_GO_elim,
+                       Fisher.classic = result_top_GO_classic,
+                       orderBy = "Fisher.elim" , topNodes = 100)
+genes_top_GO <- printGenes(top_GO_data, whichTerms = res_top_GO$GO.ID,
+                           chip = "hgu133plus2.db", geneCutOff = 1000)
+res_top_GO$sig_genes <- sapply(genes_top_GO, function(x){
+  str_c(paste0(x[x$'raw p-value' == 2, "Symbol.id"],";"), collapse = "")
+})
+```
+
+## Gene ontology (GO) based enrichment analysis  
+Top 20 GO enrichment terms  
+** Using P-value under 0.005 for functional enrichment analysis **  
+
+```{r}
+head(res_top_GO[,1:8], 20)
+```
+
+A graphical representation of the topGO results.
+```{r, echo=FALSE, fig.height=12, fig.width=10, fig.align="center",message=FALSE, warning=FALSE}
+showSigOfNodes(top_GO_data, score(result_top_GO_elim), firstSigNodes = 5,
+               useInfo = 'def')
+```
+
+## A pathway enrichment analysis using Reactome  
+** Using P-value under 0.005 for pathway enrichment analysis **   
+Enriched Reactome pathways and their p-values as a bar chart.
+- The top pathways can be displayed as a bar char that displays all categories with a p-value below the specified cutoff.
+```{r, echo=FALSE, fig.height=6, fig.width=8, fig.align="center",message=FALSE, warning=FALSE}
+entrez_ids <- mapIds(hgu133plus2.db, 
+                     keys = rownames(ttbrca1), 
+                     keytype="PROBEID",
+                     column = "ENTREZID")
+
+genelist = entrez_ids[ttbrca1gene]
+names(genelist) <- NULL
+reactome_enrich <- enrichPathway(gene = genelist, organism = "human",
+                                 pvalueCutoff = 0.2,
+                                 readable = TRUE)
+
+head(summary(reactome_enrich))[1:6]
+barplot(reactome_enrich)
+```
+
+Enriched Reactome pathways enrichment results as a graph.
+
+```{r, echo=FALSE, fig.height=6, fig.width=8, fig.align="center",message=FALSE, warning=FALSE}
+enrichMap(reactome_enrich, n = 10, vertex.label.font = 2)
+```
+
+# BRCA2 versus WT
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+ttbrca2gene <- subset(ttbrca2, P.Value < 0.01)$PROBEID
+back_genes_idx <- genefinder(ebrca2, as.character(ttbrca2gene), 
+                             method="manhattan", scale="none")
+back_genes_idx <- sapply(back_genes_idx, function(x)x$indices)
+back_genes <-featureNames(ebrca2)[back_genes_idx]
+back_genes <- setdiff(back_genes, ttbrca2gene)
+intersect(back_genes, ttbrca2gene)
+length(back_genes)
+gene_IDs <- rownames(ttbrca2)
+in_universe <- gene_IDs %in% c(ttbrca2gene,  back_genes)
+inSelection <-  gene_IDs %in% ttbrca2gene
+all_genes <- factor(as.integer(inSelection[in_universe]))
+names(all_genes) <- gene_IDs[in_universe]
+
+top_GO_data <- new("topGOdata", ontology = "BP", allGenes = all_genes,
+                   nodeSize = 10, annot=annFUN.db, affyLib = "hgu133plus2.db")
+
+result_top_GO_elim <- runTest(top_GO_data, algorithm = "elim", statistic = "Fisher")
+result_top_GO_classic <- runTest(top_GO_data, algorithm = "classic", statistic = "Fisher")
+
+
+res_top_GO <- GenTable(top_GO_data, Fisher.elim = result_top_GO_elim,
+                       Fisher.classic = result_top_GO_classic,
+                       orderBy = "Fisher.elim" , topNodes = 100)
+genes_top_GO <- printGenes(top_GO_data, whichTerms = res_top_GO$GO.ID,
+                           chip = "hgu133plus2.db", geneCutOff = 1000)
+res_top_GO$sig_genes <- sapply(genes_top_GO, function(x){
+  str_c(paste0(x[x$'raw p-value' == 2, "Symbol.id"],";"), collapse = "")
+})
+```
+
+## Gene ontology (GO) based enrichment analysis  
+Top 20 GO enrichment terms  
+**Using P-value under 0.01 for functional enrichment analysis**  
+
+```{r, echo=FALSE, fig.height=6, fig.width=8, fig.align="center",message=FALSE, warning=FALSE}
+head(res_top_GO[,1:8], 20)
+```
+
+A graphical representation of the topGO results.
+```{r, echo=FALSE, fig.height=10, fig.width=10, fig.align="center",message=FALSE, warning=FALSE}
+showSigOfNodes(top_GO_data, score(result_top_GO_elim), firstSigNodes = 5,
+               useInfo = 'def')
+```
+
+## A pathway enrichment analysis using Reactome  
+**Using P-value under 0.01 for pathway enrichment analysis**   
+Enriched Reactome pathways and their p-values as a bar chart.
+- The top pathways can be displayed as a bar char that displays all categories with a p-value below the specified cutoff.
+
+```{r, echo=FALSE, fig.height=6, fig.width=8, fig.align="center",message=FALSE, warning=FALSE}
+entrez_ids <- mapIds(hgu133plus2.db, 
+                     keys = rownames(ttbrca2), 
+                     keytype="PROBEID",
+                     column = "ENTREZID")
+
+genelist = entrez_ids[ttbrca2gene]
+names(genelist) <- NULL
+reactome_enrich <- enrichPathway(gene = genelist, organism = "human",
+                                 pvalueCutoff = 0.2,
+                                 readable = TRUE)
+
+head(summary(reactome_enrich))[1:6]
+barplot(reactome_enrich)
+```
+
+Enriched Reactome pathways enrichment results as a graph.
+```{r, echo=FALSE, fig.height=6, fig.width=8, fig.align="center",message=FALSE, warning=FALSE}
+enrichMap(reactome_enrich, n = 10, vertex.label.font = 2)
+```
+
+# Conclusion
+## BRCA1 vs WT Function Analysis    
+Top GO terms are:    
+1. regulation of glial cell differentiation  
+2. single organismal cell-cell adhesion  
+3. myofibril assembly  
+4. response to cocaine  
+5. multicellular organismal water homeostasis  
+6. interaction with host   
+7. regulation of I-kappaB kinase/NF-kappaB signaling  
+8. regulation of Ras protein signal transduction   
+9. heart development   
+10. cellular response to alkaloid   
+
+## BRCA1 vs WT Pathway enrichment analysis using Reactome    
+Top Affected Pathways:    
+1. AKT phosphorylates targets in the cytosol   
+2. Signalling by NGF   
+3. Constitutive Signaling by AKT1 E17K in Cancer  
+4. NGF signalling via TRKA from the plasma membrane   
+
+## BRCA2 vs WT Function Analysis    
+Top GO terms are:    
+1. chondrocyte differentiation   
+2. negative regulation of NF-kappaB transcription factor activity  
+3. positive regulation of cartilage development  
+4. intraciliary transport involved in cilium assembly  
+5. aldehyde biosynthetic process   
+6. positive regulation of phosphatase activity  
+7. calcium ion transmembrane import into cytosol   
+8. regulation of defense response to virus by virus
+9. Wnt signaling pathway   
+10. embryonic skeletal system morphogenesis   
+
+## BRCA2 vs WT Pathway enrichment analysis using Reactome    
+Top Affected Pathways:    
+1. Sema4D induced cell migration and growth-cone collapse  
+2. Intraflagellar transport  
+3. Sema4D in semaphorin signaling  
+4. Toll-Like Receptors Cascades  
+5. RHO GTPases Activate ROCKs  
