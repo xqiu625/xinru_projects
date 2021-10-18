@@ -4,6 +4,6 @@
 
 - **Gene prediction with a Hidden Markov Model** (Using Python, designed a computational method based on the Hidden Markov Model algorithm to determine whether the genomic region contains exons and also find them based on the donor and acceptor sites, and utilized confusion matrix to evaluate the model.)
 
-- **GSE19383** (Workflow for differential gene expression using Affymetrix microarrays, Using R Mardown, conducted Gene ontology (GO) based enrichment analysis and A pathway enrichment analysis using Reactome) 
+- **GSE19383** (Using R, workflow for differential gene expression using Affymetrix microarrays, Using R Mardown, conducted Gene ontology (GO) based enrichment analysis and A pathway enrichment analysis using Reactome) 
 
-- **GSE50567** (Workflow for differential gene expression using Affymetrix microarrays, Using R Mardown, conducted Quality control of the raw data, Background adjustment, calibration, summarization and annotation, Linear models for microarrays, Gene ontology (GO) based enrichment analysis, A pathway enrichment analysis using Reactome, A pathway enrichment analysis using GSEA) 
+- **GSE50567** (Using R, workflow differential gene expression using Affymetrix microarrays, Using R Mardown, conducted Quality control of the raw data, Background adjustment, calibration, summarization and annotation, Linear models for microarrays, Gene ontology (GO) based enrichment analysis, A pathway enrichment analysis using Reactome, A pathway enrichment analysis using GSEA) 
