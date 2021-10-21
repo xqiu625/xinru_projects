@@ -1,9 +1,4 @@
 # Projects
 
-- **Establishment of machine learning models for cervical cancer prediction** (Using Python, data cleaning, feature engineering, visualization, PCA, RFE, Random Forest, Gradient Boosting, Naive Bayes, SVM, GridSearchCV, ROC)
-
-- **Gene prediction with a Hidden Markov Model** (Using Python, designed a computational method based on the Hidden Markov Model algorithm to determine whether the genomic region contains exons and also find them based on the donor and acceptor sites, and utilized confusion matrix to evaluate the model.)
-
-- **GSE19383** (Using R, workflow for differential gene expression using Affymetrix microarrays, Using R Mardown, conducted Gene ontology (GO) based enrichment analysis and A pathway enrichment analysis using Reactome) 
-
-- **GSE50567** (Using R, workflow differential gene expression using Affymetrix microarrays, Using R Mardown, conducted Quality control of the raw data, Background adjustment, calibration, summarization and annotation, Linear models for microarrays, Gene ontology (GO) based enrichment analysis, A pathway enrichment analysis using Reactome, A pathway enrichment analysis using GSEA) 
+- **Mutations at protein-protein interfaceseffect on drugresistance in cancer** 
+Identified drugs that exhibited distinct resistance in essential protein-protein interfaces mutations, the prediction model was applied to the GDSC and CCLE databases. 
