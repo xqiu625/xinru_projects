@@ -3,7 +3,7 @@
 - **Establishment of machine learning models for cervical cancer prediction** (Using Python, data cleaning, feature engineering, visualization, PCA, RFE, Random Forest, Gradient Boosting, Naive Bayes, SVM, GridSearchCV, ROC)
 
 - **Splice site prediction with a Hidden Markov Model** (Using Python, designed a computational method based on the Hidden Markov Model algorithm to determine whether the genomic region contains exons and also find them based on the donor and acceptor sites, and utilized confusion matrix to evaluate the model.)
-  - Description of HMM topology 2
+  - Description of HMM topology 
     -	Create Donor and Acceptor models.
 
 ![image](https://user-images.githubusercontent.com/26670165/144736760-5daadf5f-49cc-416c-9f5d-ba39f0221d16.png)
