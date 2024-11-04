@@ -1,14 +1,68 @@
-# Projects
+# Bioinformatics & Machine Learning Projects
 
-- **Establishment of machine learning models for cervical cancer prediction** (Using Python, data cleaning, feature engineering, visualization, PCA, RFE, Random Forest, Gradient Boosting, Naive Bayes, SVM, GridSearchCV, ROC)
+## Cervical Cancer Prediction Model
+Advanced machine learning implementation for early cancer detection and risk assessment.
 
-- **Splice site prediction with a Hidden Markov Model** (Using Python, designed a computational method based on the Hidden Markov Model algorithm to determine whether the genomic region contains exons and also find them based on the donor and acceptor sites, and utilized confusion matrix to evaluate the model.)
-  - Description of HMM topology 
-    -	Create Donor and Acceptor models.
+### Technologies & Methods
+- **Programming:** Python
+- **Data Processing:** Data cleaning, Feature engineering
+- **Analysis:** Principal Component Analysis (PCA), Recursive Feature Elimination (RFE)
+- **Models:** 
+  - Random Forest
+  - Gradient Boosting
+  - Naive Bayes
+  - Support Vector Machine (SVM)
+- **Optimization:** GridSearchCV
+- **Evaluation:** ROC curve analysis
+- **Visualization:** Data visualization techniques
 
-![image](https://user-images.githubusercontent.com/26670165/144736760-5daadf5f-49cc-416c-9f5d-ba39f0221d16.png)
-![image](https://user-images.githubusercontent.com/26670165/144736770-414a52a7-f173-4b51-a542-f124e3d6e64b.png)
+## Genomic Splice Site Prediction
+Implementation of Hidden Markov Model (HMM) for genomic sequence analysis.
 
-- **GSE19383** (Using R, workflow for differential gene expression using Affymetrix microarrays, Using R Mardown, conducted Gene ontology (GO) based enrichment analysis and A pathway enrichment analysis using Reactome) 
+### Overview
+Developed a computational method to identify exon regions through splice site detection using HMM algorithms.
 
-- **GSE50567** (Using R, workflow differential gene expression using Affymetrix microarrays, Using R Mardown, conducted Quality control of the raw data, Background adjustment, calibration, summarization and annotation, Linear models for microarrays, Gene ontology (GO) based enrichment analysis, A pathway enrichment analysis using Reactome, A pathway enrichment analysis using GSEA) 
+### Key Components
+- **Implementation:** Python-based HMM algorithm
+- **Features:**
+  - Donor site model
+  - Acceptor site model
+  - Exon region identification
+- **Evaluation:** Confusion matrix analysis
+- **Model Topology:**
+  ```
+  Donor Model:    [Start] → [Pre-site] → [Consensus] → [Post-site] → [End]
+  Acceptor Model: [Start] → [Pre-site] → [Consensus] → [Post-site] → [End]
+  ```
+
+## Microarray Data Analysis Projects
+
+### GSE19383 Analysis
+Comprehensive gene expression analysis workflow using Affymetrix microarrays.
+
+#### Methods & Tools
+- **Platform:** R, R Markdown
+- **Analyses:**
+  - Differential gene expression analysis
+  - Gene Ontology (GO) enrichment analysis
+  - Reactome pathway enrichment analysis
+
+### GSE50567 Analysis
+Advanced microarray data processing and analysis pipeline.
+
+#### Components
+- **Quality Control:**
+  - Raw data validation
+  - Background adjustment
+  - Calibration procedures
+  - Summarization and annotation
+
+#### Analysis Pipeline
+- **Core Analysis:**
+  - Linear models for microarray data
+  - Gene Ontology (GO) enrichment
+  - Reactome pathway analysis
+  - Gene Set Enrichment Analysis (GSEA)
+
+---
+*Note: All projects include comprehensive documentation and reproducible analysis workflows.*
